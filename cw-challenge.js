@@ -5,10 +5,17 @@ function parseGame(gameLines) {
     const kills = {};
     const killsByMeans = {};
     let totalKills = 0;
+    let hasShutdown = false;
+    let hasKills = false;
 
     gameLines.forEach(line => {
+        if (line.includes("ShutdownGame:")) {
+            hasShutdown = true;
+        }
+        
         const match = line.match(/Kill: \d+ \d+ \d+: (.+) killed (.+) by (.+)/);
         if (match) {
+            hasKills = true;
             const [, killer, victim, means] = match;
             totalKills++;
             
@@ -29,11 +36,18 @@ function parseGame(gameLines) {
         }
     });
 
+    // Determine game status
+    let status = "completed";
+    if (!hasKills) {
+        status = "aborted";
+    }
+
     return {
         total_kills: totalKills,
         players: Array.from(players).sort(),
         kills,
-        kills_by_means: killsByMeans
+        kills_by_means: killsByMeans,
+        status
     };
 }
 
@@ -42,6 +56,9 @@ function generateRanking(games) {
     
     // Aggregate kills across all games
     Object.values(games).forEach(game => {
+        // Skip aborted games
+        if (game.status === "aborted") return;
+        
         Object.entries(game.kills).forEach(([player, kills]) => {
             totalKills[player] = (totalKills[player] || 0) + kills;
         });
@@ -57,8 +74,12 @@ function generateRanking(games) {
 
 async function main() {
     try {
+        console.log("Starting to read log file...");
         const logContent = fs.readFileSync('qgames.log.txt', 'utf8');
+        console.log("Log file read successfully");
+        
         const logLines = logContent.split("\n");
+        console.log(`Found ${logLines.length} lines in the log file`);
         
         const games = {};
         let currentGame = [];
@@ -83,15 +104,20 @@ async function main() {
             games[`game_${gameCount}`] = parseGame(currentGame);
         }
         
+        console.log(`Processed ${gameCount} games`);
+        
         // Generate final report
         const report = {
             games,
             ranking: generateRanking(games)
         };
         
+        console.log("\nFinal Report:");
         console.log(JSON.stringify(report, null, 4));
     } catch (error) {
         console.error("Error reading log file:", error);
+        console.error("Error details:", error.message);
+        console.error("Stack trace:", error.stack);
     }
 }
 
